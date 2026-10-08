@@ -17,9 +17,13 @@ import {
   ticketCard,
 } from './blocks.mjs';
 
+// Scorciatoia globale: compare scrivendo "/" in qualsiasi campo messaggio
+// (e nel menu ⚡) e apre direttamente il modulo, senza digitare comandi.
+export const NEW_TICKET_SHORTCUT = 'ticket_new_shortcut';
+
 const HELP = [
   '*Come usare i ticket*',
-  '• `/ticket` apre una nuova richiesta al backoffice (`/ticket oggetto` precompila l\'oggetto)',
+  '• Scrivi `/` e scegli *Nuovo ticket*, oppure `/ticket`: apre una nuova richiesta al backoffice (`/ticket oggetto` precompila l\'oggetto)',
   '• `/ticket miei` elenca le tue richieste aperte',
   '• Le risposte arrivano qui in DM, nel thread del ticket: rispondi li\'.',
 ].join('\n');
@@ -63,6 +67,11 @@ export function registerSlack(app, store, config) {
     }
     if (/^(aiuto|help|\?)$/i.test(text)) return respond({ response_type: 'ephemeral', text: HELP });
     await client.views.open({ trigger_id: command.trigger_id, view: newTicketModal(config.categories, { title: text }) });
+  });
+
+  app.shortcut(NEW_TICKET_SHORTCUT, async ({ shortcut, ack, client }) => {
+    await ack();
+    await client.views.open({ trigger_id: shortcut.trigger_id, view: newTicketModal(config.categories) });
   });
 
   app.view(NEW_TICKET_VIEW, async ({ ack, body, view, client, logger }) => {

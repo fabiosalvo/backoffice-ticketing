@@ -10,6 +10,11 @@ features:
   bot_user:
     display_name: Ticket Backoffice
     always_online: true
+  shortcuts:
+    - name: Nuovo ticket
+      type: global
+      callback_id: ticket_new_shortcut
+      description: Apri una richiesta al backoffice
   slash_commands:
     - command: /ticket
       description: Apri una richiesta al backoffice (oppure "/ticket miei")
