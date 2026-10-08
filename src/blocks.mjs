@@ -8,6 +8,7 @@ export const ACTIONS = {
   wait: 'ticket_wait',
   resolve: 'ticket_resolve',
   reopen: 'ticket_reopen',
+  category: 'ticket_category',
 };
 
 export const NEW_TICKET_VIEW = 'ticket_new';
@@ -101,6 +102,33 @@ export function readNewTicket(view) {
   };
 }
 
+const TITLE_MAX = 80;
+
+/**
+ * Un messaggio libero scritto in #assistenza diventa oggetto + dettagli:
+ * l'oggetto e' la prima riga (accorciata a parola intera), i dettagli il testo
+ * completo quando aggiunge qualcosa all'oggetto.
+ */
+export function ticketFromMessage(text, authorName) {
+  const clean = (text ?? '').trim();
+  const firstLine = clean.split('\n').find((l) => l.trim())?.trim() ?? '';
+  let title = firstLine;
+  if (title.length > TITLE_MAX) {
+    const cut = title.slice(0, TITLE_MAX - 1);
+    title = (cut.lastIndexOf(' ') > TITLE_MAX / 2 ? cut.slice(0, cut.lastIndexOf(' ')) : cut) + '…';
+  }
+  if (!title) title = `Richiesta di ${authorName}`;
+  return { title, description: clean === title ? '' : clean };
+}
+
+/** Risposta in thread nel canale #assistenza: il ticket c'e', si prosegue in privato. */
+export function assistenzaAck(t, dmLink) {
+  const where = dmLink ? `<${dmLink}|nei messaggi diretti con me>` : 'nei messaggi diretti con me';
+  return {
+    text: `🎫 Ticket #${t.id} aperto. Ti risponde il backoffice ${where}: prosegui li'.`,
+  };
+}
+
 export const ticketHeadline = (t) => `#${t.id} · ${t.title}`;
 
 const button = (text, actionId, ticketId, style) => ({
@@ -115,7 +143,7 @@ const button = (text, actionId, ticketId, style) => ({
  * La scheda del ticket. Nel canale backoffice porta i pulsanti di stato; nel
  * DM dell'agente e' solo informativa.
  */
-export function ticketCard(t, { audience }) {
+export function ticketCard(t, { audience, categories = [] }) {
   const status = STATUSES[t.status];
   const priority = PRIORITIES[t.priority];
   const blocks = [
@@ -142,6 +170,16 @@ export function ticketCard(t, { audience }) {
       if (!t.assignee_id) buttons.push(button('Prendi in carico', ACTIONS.take, t.id));
       if (t.status !== 'in_attesa') buttons.push(button("In attesa dell'agente", ACTIONS.wait, t.id));
       buttons.push(button('Risolvi', ACTIONS.resolve, t.id, 'primary'));
+    }
+    if (categories.length) {
+      const options = [...new Set([t.category, ...categories])].map((c) => option(c, c.slice(0, 75)));
+      buttons.push({
+        type: 'static_select',
+        action_id: ACTIONS.category,
+        placeholder: { type: 'plain_text', text: 'Categoria' },
+        initial_option: options[0],
+        options,
+      });
     }
     blocks.push({ type: 'actions', block_id: `ticket_${t.id}`, elements: buttons });
     blocks.push(context("Rispondi in thread per scrivere all'agente · inizia con `nota:` per una nota interna"));

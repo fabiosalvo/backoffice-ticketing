@@ -30,6 +30,10 @@ export const config = {
   appToken: process.env.SLACK_APP_TOKEN,
   // Canale dove il backoffice riceve e lavora i ticket (ID, es. C0123456)
   backofficeChannel: process.env.BACKOFFICE_CHANNEL,
+  // Canale dove gli agenti scrivono le richieste: ogni messaggio diventa un ticket (ID, es. C0123456)
+  assistenzaChannel: process.env.ASSISTENZA_CHANNEL || '',
+  // Categoria dei ticket nati da #assistenza, finche' il backoffice non la cambia
+  defaultCategory: process.env.DEFAULT_CATEGORY || 'Da classificare',
   // Chi puo' cambiare stato ai ticket. Vuoto = chiunque sia nel canale backoffice
   backofficeUsers: list('BACKOFFICE_USERS', []),
   categories: list('CATEGORIES', [
@@ -51,4 +55,7 @@ export const config = {
 export function assertSlackConfig() {
   const missing = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN', 'BACKOFFICE_CHANNEL'].filter((k) => !process.env[k]);
   if (missing.length) throw new Error(`Mancano in .env: ${missing.join(', ')} — vedi .env.example`);
+  if (process.env.ASSISTENZA_CHANNEL && process.env.ASSISTENZA_CHANNEL === process.env.BACKOFFICE_CHANNEL) {
+    throw new Error('ASSISTENZA_CHANNEL e BACKOFFICE_CHANNEL devono essere due canali diversi');
+  }
 }

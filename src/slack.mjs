@@ -1,4 +1,7 @@
-// Il ponte fra Slack e lo store. Ogni ticket vive in due thread:
+// Il ponte fra Slack e lo store. Un ticket nasce in due modi:
+//  - un messaggio scritto nel canale #assistenza (il modo principale);
+//  - /ticket o il menu di un messaggio, con il modulo.
+// Poi vive in due thread:
 //  - nel canale backoffice, sotto la scheda con i pulsanti di stato;
 //  - nel DM fra l'app e l'agente che l'ha aperto.
 // Quello che si scrive in un thread viene inoltrato nell'altro, a nome di chi
@@ -9,18 +12,21 @@ import {
   ACTIONS,
   INTERNAL_PREFIX,
   NEW_TICKET_VIEW,
+  assistenzaAck,
   myTicketsBlocks,
   newTicketModal,
   readNewTicket,
   relayText,
   statusNotice,
   ticketCard,
+  ticketFromMessage,
 } from './blocks.mjs';
 
 export const MESSAGE_SHORTCUT = 'ticket_from_message';
 
-const HELP = [
+const helpText = (config) => [
   '*Come usare i ticket*',
+  ...(config.assistenzaChannel ? [`• Scrivi la tua richiesta in <#${config.assistenzaChannel}>: diventa un ticket e ti rispondiamo qui`] : []),
   '• `/ticket` apre una nuova richiesta al backoffice (`/ticket oggetto` precompila l\'oggetto)',
   '• `/ticket miei` elenca le tue richieste aperte',
   '• Dal menu `⋯` di un messaggio: *Apri ticket* lo trasforma in richiesta',
@@ -29,6 +35,7 @@ const HELP = [
 
 export function registerSlack(app, store, config) {
   const users = new Map();
+  const HELP = helpText(config);
 
   async function who(client, userId) {
     if (!users.has(userId)) {
@@ -46,9 +53,27 @@ export function registerSlack(app, store, config) {
 
   async function refreshCards(client, t) {
     const updates = [];
-    if (t.channel_ts) updates.push(client.chat.update({ channel: config.backofficeChannel, ts: t.channel_ts, ...ticketCard(t, { audience: 'backoffice' }) }));
+    if (t.channel_ts) updates.push(client.chat.update({ channel: config.backofficeChannel, ts: t.channel_ts, ...backofficeCard(t) }));
     if (t.dm_ts) updates.push(client.chat.update({ channel: t.dm_channel, ts: t.dm_ts, ...ticketCard(t, { audience: 'agente' }) }));
     await Promise.all(updates);
+  }
+
+  const backofficeCard = (t) => ticketCard(t, { audience: 'backoffice', categories: config.categories });
+
+  /** Crea il ticket, lo pubblica nel canale backoffice e apre il thread in DM. */
+  async function openTicket(client, logger, requester, input, source) {
+    let t = store.create({ ...input, requesterId: requester.id, requesterName: requester.name, source });
+    const posted = await client.chat.postMessage({ channel: config.backofficeChannel, ...backofficeCard(t) });
+    t = store.setSlackRefs(t.id, { channelTs: posted.ts });
+    try {
+      const { channel } = await client.conversations.open({ users: requester.id });
+      const dm = await client.chat.postMessage({ channel: channel.id, ...ticketCard(t, { audience: 'agente' }) });
+      t = store.setSlackRefs(t.id, { dmChannel: channel.id, dmTs: dm.ts });
+    } catch (err) {
+      // Il ticket esiste comunque ed e' nel canale: il backoffice lo vede.
+      logger.error(`Ticket #${t.id}: DM all'agente non riuscito`, err);
+    }
+    return t;
   }
 
   const postInDm = (client, t, msg) => client.chat.postMessage({ channel: t.dm_channel, thread_ts: t.dm_ts, ...msg });
@@ -80,19 +105,7 @@ export function registerSlack(app, store, config) {
     if (!input.title.trim()) return ack({ response_action: 'errors', errors: { title: "Scrivi l'oggetto della richiesta" } });
     await ack();
 
-    const requester = await who(client, body.user.id);
-    let t = store.create({ ...input, requesterId: requester.id, requesterName: requester.name });
-
-    const posted = await client.chat.postMessage({ channel: config.backofficeChannel, ...ticketCard(t, { audience: 'backoffice' }) });
-    t = store.setSlackRefs(t.id, { channelTs: posted.ts });
-    try {
-      const { channel } = await client.conversations.open({ users: requester.id });
-      const dm = await client.chat.postMessage({ channel: channel.id, ...ticketCard(t, { audience: 'agente' }) });
-      t = store.setSlackRefs(t.id, { dmChannel: channel.id, dmTs: dm.ts });
-    } catch (err) {
-      // Il ticket esiste comunque ed e' nel canale: il backoffice lo vede.
-      logger.error(`Ticket #${t.id}: DM all'agente non riuscito`, err);
-    }
+    await openTicket(client, logger, await who(client, body.user.id), input);
   });
 
   // --- Pulsanti di stato ---------------------------------------------------------
@@ -108,9 +121,17 @@ export function registerSlack(app, store, config) {
       });
     }
     const actor = await who(client, userId);
-    const id = Number(action.value);
+    // I pulsanti portano l'id nel value; il menu categoria nel block_id della scheda.
+    const id = Number(action.value ?? action.block_id?.replace('ticket_', ''));
     let t = store.get(id);
     if (!t) return;
+
+    if (action.action_id === ACTIONS.category) {
+      const changed = store.setCategory(id, action.selected_option.value, actor);
+      if (changed) await refreshCards(client, changed);
+      return;
+    }
+
     let reopened = false;
 
     if (action.action_id === ACTIONS.take) {
@@ -141,6 +162,26 @@ export function registerSlack(app, store, config) {
 
     const inThread = event.thread_ts && event.thread_ts !== event.ts;
 
+    if (config.assistenzaChannel && event.channel === config.assistenzaChannel) {
+      const author = await who(client, event.user);
+      if (inThread) {
+        // Chi ha aperto il ticket aggiunge dettagli sotto il suo messaggio: li
+        // trattiamo come una risposta in DM. Gli altri commenti restano li'.
+        const t = store.bySource(event.channel, event.thread_ts);
+        if (t && t.requester_id === event.user) await agentReply(client, t, author, event);
+        return;
+      }
+      // Slack ritenta gli eventi non confermati in tempo: un messaggio, un ticket.
+      if (store.bySource(event.channel, event.ts)) return;
+      const { title, description } = ticketFromMessage(event.text, author.name);
+      const input = { title, description: relayText(description, event.files), category: config.defaultCategory };
+      const t = await openTicket(client, logger, author, input, { channel: event.channel, ts: event.ts });
+      let dmLink = null;
+      if (t.dm_ts) dmLink = (await client.chat.getPermalink({ channel: t.dm_channel, message_ts: t.dm_ts }).catch(() => ({}))).permalink;
+      await client.chat.postMessage({ channel: event.channel, thread_ts: event.ts, ...assistenzaAck(t, dmLink) });
+      return;
+    }
+
     if (event.channel === config.backofficeChannel) {
       if (!inThread) return;
       const t = store.byChannelThread(event.thread_ts);
@@ -160,18 +201,20 @@ export function registerSlack(app, store, config) {
         return;
       }
       const t = store.byDmThread(event.channel, event.thread_ts);
-      if (!t) return;
-      const author = await who(client, event.user);
-      const body = relayText(event.text ?? '', event.files);
-      const { ticket, statusChanged } = store.reply(t.id, { side: 'agente', authorId: author.id, authorName: author.name, body });
-      await postInChannel(client, ticket, { text: body, username: author.name, icon_url: author.icon });
-      if (statusChanged) {
-        await refreshCards(client, ticket);
-        if (t.status === 'risolto') await postInChannel(client, ticket, { text: statusNotice(ticket, author.id, { reopened: true }) });
-      }
+      if (t) await agentReply(client, t, await who(client, event.user), event);
       return;
     }
 
     logger.debug?.(`Messaggio ignorato in ${event.channel}`);
   });
+
+  async function agentReply(client, t, author, event) {
+    const body = relayText(event.text ?? '', event.files);
+    const { ticket, statusChanged } = store.reply(t.id, { side: 'agente', authorId: author.id, authorName: author.name, body });
+    await postInChannel(client, ticket, { text: body, username: author.name, icon_url: author.icon });
+    if (statusChanged) {
+      await refreshCards(client, ticket);
+      if (t.status === 'risolto') await postInChannel(client, ticket, { text: statusNotice(ticket, author.id, { reopened: true }) });
+    }
+  }
 }

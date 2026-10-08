@@ -41,3 +41,19 @@ test('gli allegati diventano link', () => {
   assert.equal(relayText('ecco', [{ name: 'a.pdf', permalink: 'https://x/a' }]), 'ecco\n📎 <https://x/a|a.pdf>');
   assert.equal(relayText('', [{ name: 'a.pdf', permalink: 'https://x/a' }]), '📎 <https://x/a|a.pdf>');
 });
+
+test('un messaggio libero diventa oggetto e dettagli', async () => {
+  const { ticketFromMessage } = await import('../src/blocks.mjs');
+  assert.deepEqual(ticketFromMessage('Mi serve la visura', 'Marianna'), { title: 'Mi serve la visura', description: '' });
+  assert.deepEqual(ticketFromMessage('\nVisura via Roma\nentro venerdi', 'M'), { title: 'Visura via Roma', description: 'Visura via Roma\nentro venerdi' });
+  assert.equal(ticketFromMessage('', 'Marianna').title, 'Richiesta di Marianna');
+  const lungo = ticketFromMessage('parola '.repeat(30), 'M').title;
+  assert.ok(lungo.length <= 80 && lungo.endsWith('…') && !lungo.includes(' …'));
+});
+
+test('la scheda backoffice ha il menu categoria con la categoria corrente', () => {
+  const card = ticketCard({ ...base, category: 'Da classificare' }, { audience: 'backoffice', categories: ['Altro', 'IT'] });
+  const select = card.blocks.find((b) => b.type === 'actions').elements.find((e) => e.action_id === ACTIONS.category);
+  assert.equal(select.initial_option.value, 'Da classificare');
+  assert.deepEqual(select.options.map((o) => o.value), ['Da classificare', 'Altro', 'IT']);
+});
