@@ -18,9 +18,11 @@ registerSlack(app, store, config);
 await app.start();
 console.log(`Ticketing attivo su Slack · canale backoffice ${config.backofficeChannel} · db ${config.dbPath}`);
 
-if (config.dashboardPassword) {
-  startDashboard(store, config);
-  console.log(`Dashboard su http://localhost:${config.dashboardPort}`);
-} else {
-  console.log('Dashboard disattivata: imposta DASHBOARD_PASSWORD per accenderla');
-}
+// Il server HTTP parte sempre: risponde a /health per l'hosting, e alla
+// dashboard solo se c'e' una password.
+startDashboard(store, config);
+console.log(
+  config.dashboardPassword
+    ? `Dashboard su http://localhost:${config.dashboardPort}`
+    : `Dashboard disattivata (manca DASHBOARD_PASSWORD) · /health su porta ${config.dashboardPort}`,
+);

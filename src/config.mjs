@@ -42,7 +42,8 @@ export const config = {
   ]),
   dbPath: resolve(root, process.env.DB_PATH || 'data/tickets.db'),
   // Dashboard web in sola lettura. Senza password non parte.
-  dashboardPort: Number(process.env.DASHBOARD_PORT || 3000),
+  // PORT e' quella che assegnano gli hosting come Railway
+  dashboardPort: Number(process.env.DASHBOARD_PORT || process.env.PORT || 3000),
   dashboardPassword: process.env.DASHBOARD_PASSWORD || '',
   // Es. https://gromia.slack.com — serve solo per il link al thread dalla dashboard
   workspaceUrl: process.env.SLACK_WORKSPACE_URL || '',

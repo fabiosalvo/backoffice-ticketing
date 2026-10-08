@@ -28,6 +28,12 @@ test('senza password giusta non si entra', async () => {
   assert.equal((await call(h, '/health')).status, 200);
 });
 
+test('senza password la dashboard resta chiusa, /health risponde', async () => {
+  const h = dashboardHandler(new TicketStore(':memory:'), { dashboardPassword: '' });
+  assert.equal((await call(h, '/', '')).status, 404);
+  assert.equal((await call(h, '/health')).status, 200);
+});
+
 test('lista e dettaglio, con escaping', async () => {
   const h = setup();
   const list = await call(h, '/', 'segreta');
