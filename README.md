@@ -84,7 +84,6 @@ pubblico, un dominio o un certificato. Basta una macchina sempre accesa.
 ### 2. Avvio
 
 ```bash
-cd backoffice-ticketing
 npm install
 cp .env.example .env    # e compila i token e il canale
 npm start

@@ -11,6 +11,10 @@
     "start": "node --disable-warning=ExperimentalWarning src/app.mjs",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fabiosalvo/backoffice-ticketing.git"
+  },
   "dependencies": {
     "@slack/bolt": "^5.1.0"
   }
