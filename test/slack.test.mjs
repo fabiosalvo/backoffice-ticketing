@@ -10,13 +10,12 @@ const CH = 'CBACKOFFICE';
 const DM = 'DAGENTE';
 
 function fakeSlack() {
-  const handlers = { command: {}, view: {}, action: [], event: {}, shortcut: {} };
+  const handlers = { command: {}, view: {}, action: [], event: {} };
   const app = {
     command: (n, f) => (handlers.command[n] = f),
     view: (n, f) => (handlers.view[n] = f),
     action: (re, f) => handlers.action.push([re, f]),
     event: (n, f) => (handlers.event[n] = f),
-    shortcut: (n, f) => (handlers.shortcut[n] = f),
   };
   const calls = [];
   let ts = 1000;

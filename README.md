@@ -22,12 +22,16 @@ Ogni ticket vive in **due thread**: sotto la scheda nel canale backoffice e
 sotto la scheda nel DM fra l'app e l'agente. Quello che si scrive in uno compare
 nell'altro, a nome di chi l'ha scritto, allegati compresi (come link).
 
+**Privacy.** Una richiesta la vedono solo l'agente che l'ha aperta e il canale
+del backoffice. Il comando `/ticket` non lascia traccia nel canale in cui viene
+digitato, il modulo è personale, e tutta la conversazione con l'agente avviene
+nel suo DM con l'app. Non esiste un canale condiviso fra agenti.
+
 **Per l'agente**
 
 | Cosa | Come |
 | ---- | ---- |
 | Aprire una richiesta | `/ticket` (oppure `/ticket oggetto` per precompilare) |
-| Trasformare un messaggio in richiesta | menu `⋯` del messaggio → *Apri ticket* |
 | Rispondere al backoffice | nel thread del ticket, nel DM con l'app |
 | Vedere le proprie richieste aperte | `/ticket miei` |
 
