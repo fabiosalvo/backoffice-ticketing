@@ -7,7 +7,6 @@ import { registerSlack } from '../src/slack.mjs';
 import { TicketStore } from '../src/store.mjs';
 
 const CH = 'CBACKOFFICE';
-const AS = 'CASSISTENZA';
 const DM = 'DAGENTE';
 
 function fakeSlack() {
@@ -28,7 +27,7 @@ function fakeSlack() {
       postMessage: async (args) => (calls.push({ method: 'postMessage', ...args }), { ts: `${++ts}.0` }),
       update: rec('update'),
       postEphemeral: rec('postEphemeral'),
-      getPermalink: async ({ channel }) => ({ permalink: `https://slack/${channel}` }),
+      getPermalink: async () => ({ permalink: 'https://slack/p1' }),
     },
     conversations: { open: async () => ({ channel: { id: DM } }) },
     views: { open: rec('views.open') },
@@ -54,7 +53,7 @@ const submitView = (title) => ({
 async function setup(config = {}) {
   const store = new TicketStore(':memory:');
   const slack = fakeSlack();
-  registerSlack(slack.app, store, { backofficeChannel: CH, assistenzaChannel: AS, defaultCategory: 'Da classificare', backofficeUsers: [], categories: ['Documenti e visure'], ...config });
+  registerSlack(slack.app, store, { backofficeChannel: CH, backofficeUsers: [], categories: ['Documenti e visure'], ...config });
   await slack.handlers.view[NEW_TICKET_VIEW](slack.ctx({ view: submitView('Visura via Roma 12'), body: { user: { id: 'UAG' } } }));
   return { store, ...slack, t: () => store.get(1) };
 }
@@ -145,61 +144,4 @@ test('/ticket miei elenca le richieste aperte', async () => {
   await handlers.command['/ticket'](ctx({ command: { text: 'miei', user_id: 'UAG' } }));
   const r = calls.find((c) => c.method === 'respond');
   assert.match(r.text, /1 richieste aperte/);
-});
-
-// --- Canale #assistenza ---------------------------------------------------------
-
-async function setupAssistenza() {
-  const store = new TicketStore(':memory:');
-  const slack = fakeSlack();
-  registerSlack(slack.app, store, { backofficeChannel: CH, assistenzaChannel: AS, defaultCategory: 'Da classificare', backofficeUsers: [], categories: ['Documenti e visure'] });
-  return { store, ...slack };
-}
-
-test('un messaggio in #assistenza apre un ticket e risponde in thread', async () => {
-  const { say, calls, store } = await setupAssistenza();
-  await say({ channel: AS, user: 'UAG', ts: '500.1', text: 'Mi serve la visura di via Roma 12\nper il rogito di venerdi' });
-  const t = store.get(1);
-  assert.equal(t.title, 'Mi serve la visura di via Roma 12');
-  assert.equal(t.category, 'Da classificare');
-  assert.equal(t.requester_id, 'UAG');
-  const posts = calls.filter((c) => c.method === 'postMessage');
-  assert.deepEqual(posts.map((p) => p.channel), [CH, DM, AS]);
-  assert.equal(posts[2].thread_ts, '500.1');
-  assert.match(posts[2].text, /Ticket #1 aperto.*<https:\/\/slack\/DAGENTE\|/);
-});
-
-test('lo stesso messaggio ritentato da Slack non apre due ticket', async () => {
-  const { say, store } = await setupAssistenza();
-  await say({ channel: AS, user: 'UAG', ts: '500.1', text: 'Visura' });
-  await say({ channel: AS, user: 'UAG', ts: '500.1', text: 'Visura' });
-  assert.equal(store.list().length, 1);
-});
-
-test('solo allegato: oggetto di ripiego, allegato nei dettagli', async () => {
-  const { say, store } = await setupAssistenza();
-  await say({ channel: AS, user: 'UAG', ts: '500.1', subtype: 'file_share', text: '', files: [{ name: 'p.pdf', permalink: 'https://f/p' }] });
-  assert.equal(store.get(1).title, 'Richiesta di Marianna');
-  assert.match(store.get(1).description, /p\.pdf/);
-});
-
-test('in thread su #assistenza conta solo chi ha aperto il ticket', async () => {
-  const { say, calls, store } = await setupAssistenza();
-  await say({ channel: AS, user: 'UAG', ts: '500.1', text: 'Visura' });
-  calls.length = 0;
-  await say({ channel: AS, user: 'UXX', thread_ts: '500.1', text: 'anche a me!' });
-  assert.equal(store.comments(1).length, 0);
-  await say({ channel: AS, user: 'UAG', thread_ts: '500.1', text: 'foglio 12' });
-  assert.equal(store.comments(1)[0].body, 'foglio 12');
-  assert.equal(calls.at(-1).channel, CH);
-});
-
-test('il backoffice cambia categoria dal menu della scheda', async () => {
-  const { say, handlers, ctx, store, calls } = await setupAssistenza();
-  await say({ channel: AS, user: 'UAG', ts: '500.1', text: 'Visura' });
-  const [, f] = handlers.action.find(([re]) => re.test(ACTIONS.category));
-  calls.length = 0;
-  await f(ctx({ action: { action_id: ACTIONS.category, block_id: 'ticket_1', selected_option: { value: 'Documenti e visure' } }, body: { user: { id: 'UBO' } , channel: { id: CH } } }));
-  assert.equal(store.get(1).category, 'Documenti e visure');
-  assert.equal(calls.filter((c) => c.method === 'update').length, 2);
 });

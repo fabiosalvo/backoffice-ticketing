@@ -51,8 +51,6 @@ CREATE TABLE IF NOT EXISTS tickets (
   channel_ts      TEXT,
   dm_channel      TEXT,
   dm_ts           TEXT,
-  source_channel  TEXT,                -- messaggio da cui e' nato, se scritto in #assistenza
-  source_ts       TEXT,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL,
   resolved_at     TEXT
@@ -82,22 +80,19 @@ export class TicketStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
-    this.#migrate();
     this.now = () => now().toISOString();
   }
 
-  create({ title, description = '', category, priority = 'normale', requesterId, requesterName, source }) {
+  create({ title, description = '', category, priority = 'normale', requesterId, requesterName }) {
     if (!title?.trim()) throw new Error('Il titolo e\' obbligatorio');
     if (!PRIORITIES[priority]) throw new Error(`Priorita' sconosciuta: ${priority}`);
     const at = this.now();
     const { lastInsertRowid } = this.db
       .prepare(
-        `INSERT INTO tickets (title, description, category, priority, requester_id, requester_name,
-           source_channel, source_ts, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tickets (title, description, category, priority, requester_id, requester_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(title.trim(), description.trim(), category, priority, requesterId, requesterName,
-        source?.channel ?? null, source?.ts ?? null, at, at);
+      .run(title.trim(), description.trim(), category, priority, requesterId, requesterName, at, at);
     return this.get(Number(lastInsertRowid));
   }
 
@@ -107,11 +102,6 @@ export class TicketStore {
 
   byChannelThread(ts) {
     return this.db.prepare('SELECT * FROM tickets WHERE channel_ts = ?').get(ts) ?? null;
-  }
-
-  /** Il ticket nato da un messaggio in #assistenza (o dal suo thread). */
-  bySource(channel, ts) {
-    return this.db.prepare('SELECT * FROM tickets WHERE source_channel = ? AND source_ts = ?').get(channel, ts) ?? null;
   }
 
   byDmThread(channel, ts) {
@@ -139,15 +129,6 @@ export class TicketStore {
       .prepare('UPDATE tickets SET status = ?, updated_at = ?, resolved_at = ? WHERE id = ?')
       .run(status, at, status === 'risolto' ? at : null, id);
     this.#system(id, `${actor.name} ha portato il ticket da "${STATUSES[ticket.status].label}" a "${STATUSES[status].label}"`);
-    return this.get(id);
-  }
-
-  setCategory(id, category, actor) {
-    const ticket = this.get(id);
-    if (!ticket) throw new Error(`Ticket #${id} inesistente`);
-    if (ticket.category === category) return null;
-    this.db.prepare('UPDATE tickets SET category = ?, updated_at = ? WHERE id = ?').run(category, this.now(), id);
-    this.#system(id, `${actor.name} ha cambiato categoria: "${ticket.category}" → "${category}"`);
     return this.get(id);
   }
 
@@ -217,15 +198,6 @@ export class TicketStore {
   counts() {
     const rows = this.db.prepare('SELECT status, COUNT(*) AS n FROM tickets GROUP BY status').all();
     return Object.fromEntries(Object.keys(STATUSES).map((s) => [s, rows.find((r) => r.status === s)?.n ?? 0]));
-  }
-
-  // Database creati prima che esistesse #assistenza: aggiunge le colonne mancanti.
-  #migrate() {
-    const columns = this.db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.name);
-    for (const col of ['source_channel', 'source_ts']) {
-      if (!columns.includes(col)) this.db.exec(`ALTER TABLE tickets ADD COLUMN ${col} TEXT`);
-    }
-    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS tickets_source ON tickets(source_channel, source_ts)');
   }
 
   #system(id, body) {
