@@ -99,14 +99,40 @@ Serve Node 22.13 o successivo: il database è SQLite integrato in Node
 (`node:sqlite`), nessun servizio da installare. I dati stanno in
 `data/tickets.db` — è l'unico file da salvare nei backup.
 
-### In produzione
+### In produzione su Railway
 
-Un processo sempre acceso: una VM piccola, un container (Railway, Render,
-Fly.io) o un server in ufficio. Due cose da sapere:
+Il repository è già pronto (`railway.json`): build, avvio, controllo di salute
+su `/health`, riavvio automatico, una sola istanza.
 
-- Il file SQLite deve stare su un **disco persistente** (volume del container).
-- Un'istanza sola: due processi collegati alla stessa app riceverebbero gli
-  stessi eventi due volte.
+1. <https://railway.com> → **New Project** → **Deploy from GitHub repo** →
+   `fabiosalvo/backoffice-ticketing`. Al primo giro il servizio va in errore
+   perché mancano le variabili: è normale.
+2. Nel servizio → **Settings → Volumes** (o tasto destro → *Attach volume*):
+   mount path `/data`. Qui vive il database; senza volume, a ogni rilascio i
+   ticket andrebbero persi.
+3. **Variables** → *Raw Editor* → incolla e completa:
+
+   ```
+   SLACK_BOT_TOKEN=xoxb-...
+   SLACK_APP_TOKEN=xapp-...
+   BACKOFFICE_CHANNEL=C06PTFAS9V1
+   DB_PATH=/data/tickets.db
+   DASHBOARD_PASSWORD=
+   ```
+
+   `C06PTFAS9V1` è **#helpdesk**. `DASHBOARD_PASSWORD`: una password lunga a
+   scelta; vuota, la dashboard resta spenta.
+4. Il servizio si rilancia da solo. Nei log deve comparire
+   `Ticketing attivo su Slack`.
+5. Per la dashboard: **Settings → Networking → Generate Domain**. Si apre con
+   la password scelta (il nome utente è indifferente).
+6. Su Slack, in **#helpdesk**: `/invite @Ticket Backoffice`.
+
+Ogni merge su `main` viene rilasciato in automatico. Il database è l'unico
+dato da proteggere: Railway fa i backup dei volumi da **Volume → Backups**.
+
+Resta **una sola istanza** (`numReplicas: 1`): il database è un file sul volume
+e non si condivide fra più copie del servizio.
 
 ## Configurazione
 

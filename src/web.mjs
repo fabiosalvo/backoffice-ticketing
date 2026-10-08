@@ -116,6 +116,8 @@ export function dashboardHandler(store, config) {
   return (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/health') return res.writeHead(200).end('ok');
+    // Senza password il server risponde solo al controllo di salute dell'hosting
+    if (!config.dashboardPassword) return res.writeHead(404).end('Dashboard disattivata');
     if (!authorized(req, config.dashboardPassword)) {
       return res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Ticket backoffice"' }).end('Accesso riservato');
     }
