@@ -1,0 +1,17 @@
+{
+  "name": "backoffice-ticketing",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Ticketing minimale per le richieste degli agenti al backoffice, aperte e gestite da Slack",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/app.mjs",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@slack/bolt": "^5.1.0"
+  }
+}
