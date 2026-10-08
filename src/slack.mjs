@@ -17,13 +17,14 @@ import {
   ticketCard,
 } from './blocks.mjs';
 
-export const MESSAGE_SHORTCUT = 'ticket_from_message';
+// Scorciatoia globale: compare scrivendo "/" in qualsiasi campo messaggio
+// (e nel menu ⚡) e apre direttamente il modulo, senza digitare comandi.
+export const NEW_TICKET_SHORTCUT = 'ticket_new_shortcut';
 
 const HELP = [
   '*Come usare i ticket*',
-  '• `/ticket` apre una nuova richiesta al backoffice (`/ticket oggetto` precompila l\'oggetto)',
+  '• Scrivi `/` e scegli *Nuovo ticket*, oppure `/ticket`: apre una nuova richiesta al backoffice (`/ticket oggetto` precompila l\'oggetto)',
   '• `/ticket miei` elenca le tue richieste aperte',
-  '• Dal menu `⋯` di un messaggio: *Apri ticket* lo trasforma in richiesta',
   '• Le risposte arrivano qui in DM, nel thread del ticket: rispondi li\'.',
 ].join('\n');
 
@@ -68,11 +69,9 @@ export function registerSlack(app, store, config) {
     await client.views.open({ trigger_id: command.trigger_id, view: newTicketModal(config.categories, { title: text }) });
   });
 
-  app.shortcut(MESSAGE_SHORTCUT, async ({ shortcut, ack, client }) => {
+  app.shortcut(NEW_TICKET_SHORTCUT, async ({ shortcut, ack, client }) => {
     await ack();
-    const { permalink } = await client.chat.getPermalink({ channel: shortcut.channel.id, message_ts: shortcut.message.ts });
-    const description = [shortcut.message.text, permalink && `Messaggio originale: ${permalink}`].filter(Boolean).join('\n\n');
-    await client.views.open({ trigger_id: shortcut.trigger_id, view: newTicketModal(config.categories, { description }) });
+    await client.views.open({ trigger_id: shortcut.trigger_id, view: newTicketModal(config.categories) });
   });
 
   app.view(NEW_TICKET_VIEW, async ({ ack, body, view, client, logger }) => {

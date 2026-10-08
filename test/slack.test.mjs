@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ACTIONS, NEW_TICKET_VIEW } from '../src/blocks.mjs';
-import { registerSlack } from '../src/slack.mjs';
+import { NEW_TICKET_SHORTCUT, registerSlack } from '../src/slack.mjs';
 import { TicketStore } from '../src/store.mjs';
 
 const CH = 'CBACKOFFICE';
@@ -144,4 +144,13 @@ test('/ticket miei elenca le richieste aperte', async () => {
   await handlers.command['/ticket'](ctx({ command: { text: 'miei', user_id: 'UAG' } }));
   const r = calls.find((c) => c.method === 'respond');
   assert.match(r.text, /1 richieste aperte/);
+});
+
+test('la scorciatoia "/" apre il modulo vuoto', async () => {
+  const { handlers, ctx, calls } = await setup();
+  calls.length = 0;
+  await handlers.shortcut[NEW_TICKET_SHORTCUT](ctx({ shortcut: { trigger_id: 'T1' } }));
+  const open = calls.find((c) => c.method === 'views.open');
+  assert.equal(open.trigger_id, 'T1');
+  assert.equal(open.view.callback_id, NEW_TICKET_VIEW);
 });
