@@ -81,6 +81,11 @@ utente qualsiasi, la password è quella).
 - **Ticket**: proprietà a sinistra (richiedente, assegnatario, stato, priorità,
   categoria, link al thread Slack), poi il box di risposta e la conversazione
   dalla più recente, con le schede *Tutte* e *Interne*.
+- **Assegnatario, priorità e categoria** si cambiano dal pannello a sinistra:
+  si salvano con **Aggiorna** (senza cambiare stato) o insieme alla risposta con
+  "Invia come …". Ogni modifica resta nello storico e compare nel thread del
+  canale; chi riceve un ticket assegnato viene menzionato, così Slack lo avvisa.
+  L'agente non riceve queste modifiche.
 - **Box di risposta**: *Risposta pubblica* arriva all'agente nel suo DM;
   *Nota interna* (sfondo giallo) resta al backoffice. Si invia con **Invia come
   Aperto**, **Invia come In attesa** o **Invia come Risolto**: testo e stato
@@ -118,7 +123,7 @@ pubblico, un dominio o un certificato. Basta una macchina sempre accesa.
 npm install
 cp .env.example .env    # e compila i token e il canale
 npm start
-npm test                # 35 test, nessun workspace necessario
+npm test                # 38 test, nessun workspace necessario
 ```
 
 Serve Node 22.13 o successivo: il database è SQLite integrato in Node

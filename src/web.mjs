@@ -116,6 +116,7 @@ const page = (title, body) => `<!doctype html>
   th { font-size:12px; color:var(--muted); font-weight:600; }
   tr.row:hover { background:var(--bg); cursor:pointer; }
   .props dt { font-size:12px; color:var(--muted); margin-top:12px; } .props dd { margin:2px 0 0; }
+  .props select.prop { width:100%; }
   .ticket-head { display:flex; gap:12px; align-items:flex-start; margin-bottom:16px; }
   .avatar { flex:none; display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px;
             border-radius:50%; color:#fff; font-weight:700; font-size:14px; }
@@ -252,7 +253,7 @@ function replyBox(t, operators, current, csrf) {
   const buttons = SUBMIT_STATUSES.map(
     (s) => `<button class="btn${s === 'risolto' ? ' primary' : ''}" name="status" value="${s}">Invia come <b>${STATUSES[s].label}</b></button>`,
   ).join('');
-  return `<form class="reply" method="post" action="/t/${t.id}/reply">
+  return `<form class="reply" id="reply-form" method="post" action="/t/${t.id}/reply">
     <input type="hidden" name="csrf" value="${csrf}">
     <input type="radio" name="kind" value="pubblica" id="k-pub" checked>
     <input type="radio" name="kind" value="interna" id="k-int">
@@ -266,14 +267,40 @@ function replyBox(t, operators, current, csrf) {
   </form>`;
 }
 
+/** Le categorie fra cui scegliere: quelle configurate, piu' quella attuale se e' fuori elenco. */
+const categoriesFor = (config, t) => [...new Set([...(config.categories ?? []), t.category])];
+
+/** Chi si puo' assegnare: il team, piu' l'assegnatario attuale se nel frattempo ne e' uscito. */
+function assignables(operators, t) {
+  const list = [...operators];
+  if (t.assignee_id && !list.some((o) => o.id === t.assignee_id)) list.push({ id: t.assignee_id, name: t.assignee_name });
+  return list;
+}
+
+function propsPanel(t, config, operators) {
+  const sel = (on) => (on ? ' selected' : '');
+  const field = (name, options) => `<select name="${name}" form="reply-form" class="prop">${options}</select>`;
+  const assignee = field(
+    'assignee',
+    `<option value=""${sel(!t.assignee_id)}>— Nessuno —</option>` +
+      assignables(operators, t).map((o) => `<option value="${escapeHtml(o.id)}"${sel(o.id === t.assignee_id)}>${escapeHtml(o.name)}</option>`).join(''),
+  );
+  const priority = field('priority', Object.entries(PRIORITIES).map(([k, p]) => `<option value="${k}"${sel(k === t.priority)}>${p.emoji} ${p.label}</option>`).join(''));
+  const category = field('category', categoriesFor(config, t).map((c) => `<option value="${escapeHtml(c)}"${sel(c === t.category)}>${escapeHtml(c)}</option>`).join(''));
+  return { assignee, priority, category };
+}
+
 function ticketPage(store, t, config, { operators, operator, vista, flash }) {
   const link = slackLink(config.workspaceUrl, config.backofficeChannel, t.channel_ts);
+  const edit = propsPanel(t, config, operators);
   const props = `<aside><dl class="props">
       <dt>Richiedente</dt><dd>${escapeHtml(t.requester_name)}</dd>
-      <dt>Assegnatario</dt><dd>${escapeHtml(t.assignee_name ?? '—')}</dd>
+      <dt>Assegnatario</dt><dd>${edit.assignee}</dd>
       <dt>Stato</dt><dd>${badge(t.status)}</dd>
-      <dt>Priorita'</dt><dd>${PRIORITIES[t.priority].emoji} ${PRIORITIES[t.priority].label}</dd>
-      <dt>Categoria</dt><dd>${escapeHtml(t.category)}</dd>
+      <dt>Priorita'</dt><dd>${edit.priority}</dd>
+      <dt>Categoria</dt><dd>${edit.category}</dd>
+      <dd style="margin-top:12px"><button class="btn" form="reply-form" name="status" value="">Aggiorna</button>
+        <div class="muted" style="font-size:12px;margin-top:4px">Salva le modifiche senza cambiare stato. Anche "Invia come …" le salva.</div></dd>
       <dt>Aperto il</dt><dd>${formatDate(t.created_at)}</dd>
       ${t.resolved_at ? `<dt>Risolto il</dt><dd>${formatDate(t.resolved_at)}</dd>` : ''}
       ${link ? `<dt>Slack</dt><dd><a href="${escapeHtml(link)}">Apri il thread</a></dd>` : ''}
@@ -332,7 +359,22 @@ const TEAM_FLASHES = {
   rimosso: { text: 'Rimosso dal team.' },
 };
 
+/** Le proprieta' inviate dal pannello, solo se valide. */
+function readProps(form, t, config, operators) {
+  const props = {};
+  if (PRIORITIES[form.get('priority')]) props.priority = form.get('priority');
+  if (categoriesFor(config, t).includes(form.get('category'))) props.category = form.get('category');
+  if (form.has('assignee')) {
+    const id = form.get('assignee');
+    const who = assignables(operators, t).find((o) => o.id === id);
+    if (id === '') props.assignee = null;
+    else if (who) props.assignee = { id: who.id, name: who.name };
+  }
+  return props;
+}
+
 const FLASHES = {
+  salvato: { text: 'Modifiche salvate.' },
   inviato: { text: 'Risposta inviata: l\'agente la riceve su Slack.' },
   nota: { text: 'Nota interna salvata.' },
   stato: { text: 'Stato aggiornato.' },
@@ -376,9 +418,14 @@ export function dashboardHandler(store, config, { desk, client } = {}) {
       const body = (form.get('body') ?? '').trim();
       const internal = form.get('kind') === 'interna';
       const status = SUBMIT_STATUSES.includes(form.get('status')) ? form.get('status') : undefined;
-      if (!body && (!status || status === t.status)) return back('vuoto');
-      await desk.backofficeReply(client, t.id, operator, { body, internal, status });
-      return back(body ? (internal ? 'nota' : 'inviato') : 'stato');
+      const props = readProps(form, t, config, await operatorsOf());
+      const propsChanged =
+        (props.priority !== undefined && props.priority !== t.priority) ||
+        (props.category !== undefined && props.category !== t.category) ||
+        (props.assignee !== undefined && (props.assignee?.id ?? null) !== t.assignee_id);
+      if (!body && (!status || status === t.status) && !propsChanged) return back('vuoto');
+      await desk.backofficeReply(client, t.id, operator, { body, internal, status, props });
+      return back(body ? (internal ? 'nota' : 'inviato') : status && status !== t.status ? 'stato' : 'salvato');
     }
 
     if (url.pathname === '/team' && req.method === 'POST') {
