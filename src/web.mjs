@@ -109,6 +109,10 @@ const page = (title, body) => `<!doctype html>
   .s-in_attesa { background:var(--attesa); } .s-risolto { background:var(--risolto); }
   input, select, button, textarea { font:inherit; color:var(--ink); }
   input, select { padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:var(--card); }
+  /* Freccia dei menu disegnata da noi: quella del browser sta attaccata al bordo. */
+  select { appearance:none; -webkit-appearance:none; padding-right:36px; cursor:pointer;
+           background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2368737d' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+           background-repeat:no-repeat; background-position:right 14px center; background-size:12px 8px; }
   .filters { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
   .table { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; }
   table { width:100%; border-collapse:collapse; }
