@@ -60,7 +60,7 @@ test('setStatus restituisce null se lo stato non cambia e traccia lo storico', (
   const t = nuovo(s);
   assert.equal(s.setStatus(t.id, 'aperto', bo), null);
   s.setStatus(t.id, 'in_attesa', bo);
-  assert.match(s.comments(t.id).at(-1).body, /Luca ha portato il ticket da "Aperto"/);
+  assert.match(s.comments(t.id).at(-1).body, /Luca ha portato il ticket da "Nuovo"/);
 });
 
 test('list filtra per aperti, richiedente e testo, urgenti prima', () => {

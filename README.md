@@ -1,10 +1,11 @@
 # Ticket Backoffice
 
 Un helpdesk minimo, alla Zendesk, per le richieste degli agenti al backoffice.
-Si usa tutto da Slack: l'agente scrive `/` e sceglie **Nuovo ticket**, il backoffice la
-lavora in un canale, e le risposte vanno avanti e indietro senza che nessuno
-debba cercare l'altro in privato. Una dashboard web in sola lettura dà la vista
-d'insieme.
+L'agente scrive `/` su Slack e sceglie **Nuovo ticket**; il backoffice lo
+lavora dal canale Slack o dalla **dashboard web**, che funziona come Zendesk
+Support (risposta pubblica o nota interna, "Invia come Aperto / In attesa /
+Risolto"). Le risposte arrivano all'agente nel suo DM con l'app, senza che
+nessuno debba cercare l'altro in privato.
 
 ## Come funziona
 
@@ -46,29 +47,50 @@ nel suo DM con l'app. Non esiste un canale condiviso fra agenti.
 
 ### Stati
 
+Gli stessi di Zendesk:
+
 ```
- aperto ──► in lavorazione ──► in attesa dell'agente ──► risolto
-    ▲             ▲                     │                  │
-    └─────────────┴──── l'agente risponde ◄────────────────┘
+ Nuovo ──► Aperto ──► In attesa ──► Risolto
+   ▲          ▲           │            │
+   └──────────┴── l'agente risponde ◄──┘
 ```
+
+- **Nuovo**: nessuno l'ha ancora preso.
+- **Aperto**: il backoffice ci sta lavorando.
+- **In attesa**: tocca all'agente rispondere.
+- **Risolto**: chiuso; se l'agente risponde, si riapre.
 
 Le regole automatiche sono due, quelle di ogni helpdesk:
 
-1. Il primo del backoffice che risponde a un ticket **aperto** se lo prende in
-   carico e lo porta **in lavorazione**.
-2. Se l'agente risponde a un ticket **in attesa** o **risolto**, il ticket torna
-   in coda (in lavorazione se ha già un assegnatario, altrimenti aperto). Una
-   risposta non resta mai sepolta in un ticket chiuso.
+1. Il primo del backoffice che risponde a un ticket **Nuovo** se lo prende in
+   carico e lo porta ad **Aperto**.
+2. Se l'agente risponde a un ticket **In attesa** o **Risolto**, il ticket torna
+   in coda (Aperto se ha già un assegnatario, altrimenti Nuovo). Una risposta
+   non resta mai sepolta in un ticket chiuso.
 
 Le note interne non spostano nulla. Ogni cambio di stato resta nello storico.
 
 ### Dashboard
 
-Con `DASHBOARD_PASSWORD` impostata, su `http://localhost:3000`: conteggi per
-stato, lista filtrabile per stato, categoria e testo (o `#42`), urgenti in cima,
-e per ogni ticket l'intera conversazione con note interne e storico. È in sola
-lettura: il lavoro si fa su Slack, così c'è un posto solo dove le cose
-succedono. Accesso con Basic Auth (utente qualsiasi, la password è quella).
+Sul modello di Zendesk Support. Si apre con `DASHBOARD_PASSWORD` (Basic Auth:
+utente qualsiasi, la password è quella).
+
+- **Viste** a sinistra: Da gestire, Nuovo, Aperto, In attesa, Risolto, Tutti,
+  con i conteggi. Filtri per categoria e ricerca per testo o `#42`; urgenti in
+  cima.
+- **Ticket**: proprietà a sinistra (richiedente, assegnatario, stato, priorità,
+  categoria, link al thread Slack), poi il box di risposta e la conversazione
+  dalla più recente, con le schede *Tutte* e *Interne*.
+- **Box di risposta**: *Risposta pubblica* arriva all'agente nel suo DM;
+  *Nota interna* (sfondo giallo) resta al backoffice. Si invia con **Invia come
+  Aperto**, **Invia come In attesa** o **Invia come Risolto**: testo e stato
+  partono insieme, e senza testo cambia solo lo stato.
+- **Rispondi come**: chi risponde, scelto fra le persone del workspace (solo
+  `BACKOFFICE_USERS`, se impostato). Il browser lo ricorda.
+
+Tutto quello che si fa dalla dashboard compare anche nel thread del ticket nel
+canale Slack, così il canale resta lo storico completo e si può lavorare
+indifferentemente da una parte o dall'altra.
 
 ## Setup
 
@@ -92,7 +114,7 @@ pubblico, un dominio o un certificato. Basta una macchina sempre accesa.
 npm install
 cp .env.example .env    # e compila i token e il canale
 npm start
-npm test                # 25 test, nessun workspace necessario
+npm test                # 31 test, nessun workspace necessario
 ```
 
 Serve Node 22.13 o successivo: il database è SQLite integrato in Node
@@ -154,7 +176,8 @@ e non si condivide fra più copie del servizio.
 | ---- | ----- |
 | `src/store.mjs` | Ticket, risposte, stati e regole. Non sa nulla di Slack. |
 | `src/blocks.mjs` | Modale e schede Slack (Block Kit), funzioni pure |
-| `src/slack.mjs` | Comando, pulsanti, inoltro fra i due thread |
+| `src/desk.mjs` | Le operazioni sui ticket (rispondere, cambiare stato), comuni a Slack e dashboard |
+| `src/slack.mjs` | Comando, pulsanti, messaggi nei thread |
 | `src/web.mjs` | Dashboard |
 | `src/app.mjs` | Avvio |
 
