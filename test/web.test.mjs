@@ -41,6 +41,7 @@ function fakeClient() {
       list: async () => ({
         members: [
           { id: 'UBO', profile: { real_name: 'Luca Rossi' } },
+          { id: 'UFS', profile: { real_name: 'Fabio Salvo' } },
           { id: 'UBOT', is_bot: true, profile: { real_name: 'Bot' } },
           { id: 'UOLD', deleted: true, profile: { real_name: 'Ex' } },
         ],
@@ -148,6 +149,41 @@ test('invio vuoto, operatore sconosciuto, CSRF e origine estranea vengono respin
   assert.equal((await reply(h, { body: 'ciao' }, { headers: { origin: 'https://evil.example' } })).status, 403);
   assert.equal(store.comments(1).length, 0);
   assert.equal(client.calls.length, 0);
+});
+
+const team = (h, form, extra = {}) =>
+  call(h, '/team', { method: 'POST', form: { csrf: csrfToken(PASSWORD), ...form }, ...extra });
+
+test('team: si aggiunge e si toglie dalla dashboard, e decide chi risponde', async () => {
+  const { h, store } = setup();
+  const empty = await call(h, '/team');
+  assert.match(empty.body, /Il team è vuoto/);
+  assert.match((await call(h, '/t/1')).body, /<option value="UFS">Fabio Salvo<\/option>/);
+
+  assert.equal((await team(h, { action: 'add', user: 'UBO' })).headers.location, '/team?ok=aggiunto');
+  assert.deepEqual(store.team().map((m) => [m.user_id, m.name]), [['UBO', 'Luca Rossi']]);
+  const page = await call(h, '/team');
+  assert.match(page.body, /<b>Luca Rossi<\/b>/);
+  assert.doesNotMatch(page.body, /Il team è vuoto/);
+  // in "Aggiungi" restano solo quelli fuori dal team
+  assert.match(page.body, /<option value="UFS">Fabio Salvo<\/option>/);
+  assert.doesNotMatch(page.body, /<option value="UBO">/);
+
+  // "Rispondi come" mostra solo il team, e chi e' fuori non puo' rispondere
+  const detail = (await call(h, '/t/1')).body;
+  assert.match(detail, /<option value="UBO">Luca Rossi<\/option>/);
+  assert.doesNotMatch(detail, /Fabio Salvo/);
+  assert.equal((await reply(h, { body: 'ciao', operator: 'UFS' })).headers.location, '/t/1?ok=operatore');
+
+  assert.equal((await team(h, { action: 'remove', user: 'UBO' })).headers.location, '/team?ok=rimosso');
+  assert.equal(store.team().length, 0);
+});
+
+test('team: niente aggiunte senza CSRF o di persone fuori dal workspace', async () => {
+  const { h, store } = setup();
+  assert.equal((await team(h, { action: 'add', user: 'UBO', csrf: 'falso' })).status, 403);
+  assert.equal((await team(h, { action: 'add', user: 'UNESSUNO' })).status, 400);
+  assert.equal(store.team().length, 0);
 });
 
 test('helper', () => {

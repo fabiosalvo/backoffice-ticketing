@@ -4,11 +4,18 @@
 
 import { relayText, statusNotice, ticketCard } from './blocks.mjs';
 
-const OPERATORS_TTL = 10 * 60 * 1000;
+const PEOPLE_TTL = 10 * 60 * 1000;
 
 export function createDesk(store, config) {
   const users = new Map();
-  let operatorsCache = { at: 0, list: [] };
+  let peopleCache = { at: 0, list: [] };
+
+  // BACKOFFICE_USERS serve solo a riempire il team la prima volta; poi il team
+  // si gestisce dalla dashboard.
+  if (!store.team().length) for (const id of config.backofficeUsers ?? []) store.addToTeam(id, id);
+
+  /** Senza team configurato chiunque fa da backoffice, come prima. */
+  const isBackoffice = (userId) => !store.team().length || store.inTeam(userId);
 
   const person = (u) => ({
     id: u.id,
@@ -104,29 +111,43 @@ export function createDesk(store, config) {
     return ticket;
   }
 
-  /**
-   * Chi puo' rispondere dalla dashboard: le persone del workspace (o solo
-   * BACKOFFICE_USERS, se impostato). Serve per firmare le risposte con un
-   * nome e un utente Slack veri.
-   */
-  async function operators(client) {
-    if (Date.now() - operatorsCache.at < OPERATORS_TTL && operatorsCache.list.length) return operatorsCache.list;
+  /** Le persone del workspace (niente bot ne' account disattivati). */
+  async function people(client) {
+    if (Date.now() - peopleCache.at < PEOPLE_TTL && peopleCache.list.length) return peopleCache.list;
     const list = [];
     let cursor;
     do {
       const res = await client.users.list({ limit: 200, cursor });
       for (const u of res.members ?? []) {
         if (u.deleted || u.is_bot || u.id === 'USLACKBOT') continue;
-        if (config.backofficeUsers.length && !config.backofficeUsers.includes(u.id)) continue;
         list.push(person(u));
       }
       cursor = res.response_metadata?.next_cursor;
     } while (cursor);
     list.sort((a, b) => a.name.localeCompare(b.name, 'it'));
     for (const p of list) users.set(p.id, p);
-    operatorsCache = { at: Date.now(), list };
+    peopleCache = { at: Date.now(), list };
     return list;
   }
 
-  return { who, refreshCards, openTicket, changeStatus, backofficeReply, agentReply, operators };
+  /**
+   * Chi puo' rispondere dalla dashboard: il team del backoffice, oppure tutto
+   * il workspace finche' il team e' vuoto. Serve per firmare le risposte con un
+   * nome e un utente Slack veri.
+   */
+  async function operators(client) {
+    const all = await people(client);
+    return store.team().length ? all.filter((p) => store.inTeam(p.id)) : all;
+  }
+
+  async function addToTeam(client, userId) {
+    const p = (await people(client)).find((x) => x.id === userId);
+    if (!p) throw Object.assign(new Error('Persona non trovata nel workspace'), { status: 400 });
+    store.addToTeam(p.id, p.name);
+    return p;
+  }
+
+  const removeFromTeam = (userId) => store.removeFromTeam(userId);
+
+  return { who, isBackoffice, refreshCards, openTicket, changeStatus, backofficeReply, agentReply, people, operators, addToTeam, removeFromTeam };
 }
