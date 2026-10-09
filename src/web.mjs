@@ -81,6 +81,11 @@ function avatar(name) {
   return `<span class="avatar" style="background:${AVATAR_COLORS[h % AVATAR_COLORS.length]}">${escapeHtml(initials)}</span>`;
 }
 
+// Pallini della priorita' in tinta unita: le emoji (🔴🟠) su Mac hanno il gradiente.
+export const PRIORITY_COLORS = { bassa: '#a3acb4', normale: '#3091ec', alta: '#f39c32', urgente: '#e34f32' };
+const dot = (priority) => `<span class="dot" style="background:${PRIORITY_COLORS[priority]}"></span>`;
+const priorityLabel = (priority) => `${dot(priority)}${PRIORITIES[priority].label}`;
+
 const badge = (status) => `<span class="badge s-${status}">${STATUSES[status].label}</span>`;
 
 const page = (title, body) => `<!doctype html>
@@ -104,11 +109,20 @@ const page = (title, body) => `<!doctype html>
   main { padding:20px 24px; min-width:0; }
   h1 { font-size:22px; margin:0 0 4px; }
   .muted { color:var(--muted); }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px; vertical-align:1px; flex:none; }
+  .nowrap { white-space:nowrap; }
+  .with-dot { position:relative; display:block; }
+  .with-dot .dot { position:absolute; left:12px; top:50%; transform:translateY(-50%); margin:0; pointer-events:none; }
+  .with-dot select { padding-left:30px; }
   .badge { display:inline-block; padding:1px 8px; border-radius:4px; font-size:12px; font-weight:600; color:#fff; }
   .s-aperto { background:var(--nuovo); color:#3a2a00; } .s-in_lavorazione { background:var(--aperto); }
   .s-in_attesa { background:var(--attesa); } .s-risolto { background:var(--risolto); }
   input, select, button, textarea { font:inherit; color:var(--ink); }
   input, select { padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:var(--card); }
+  /* Freccia dei menu disegnata da noi: quella del browser sta attaccata al bordo. */
+  select { appearance:none; -webkit-appearance:none; padding-right:36px; cursor:pointer;
+           background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2368737d' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+           background-repeat:no-repeat; background-position:right 14px center; background-size:12px 8px; }
   .filters { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
   .table { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; }
   table { width:100%; border-collapse:collapse; }
@@ -191,7 +205,7 @@ function listPage(store, query) {
       (t) => `<tr class="row" onclick="location.href='/t/${t.id}'">
         <td>${badge(t.status)}</td>
         <td><a href="/t/${t.id}">${escapeHtml(t.title)}</a><div class="muted">#${t.id} · ${escapeHtml(t.category)}</div></td>
-        <td>${PRIORITIES[t.priority].emoji} ${PRIORITIES[t.priority].label}</td>
+        <td class="nowrap">${priorityLabel(t.priority)}</td>
         <td>${escapeHtml(t.requester_name)}</td>
         <td>${escapeHtml(t.assignee_name ?? '—')}</td>
         <td class="muted">${friendlyDate(t.updated_at)}</td>
@@ -285,7 +299,12 @@ function propsPanel(t, config, operators) {
     `<option value=""${sel(!t.assignee_id)}>— Nessuno —</option>` +
       assignables(operators, t).map((o) => `<option value="${escapeHtml(o.id)}"${sel(o.id === t.assignee_id)}>${escapeHtml(o.name)}</option>`).join(''),
   );
-  const priority = field('priority', Object.entries(PRIORITIES).map(([k, p]) => `<option value="${k}"${sel(k === t.priority)}>${p.emoji} ${p.label}</option>`).join(''));
+  // Il pallino sta fuori dalla select (le option non si possono colorare) e
+  // segue la scelta.
+  const priority = `<span class="with-dot">${dot(t.priority)}<select name="priority" form="reply-form" class="prop"
+      onchange="this.previousElementSibling.style.background=this.selectedOptions[0].dataset.color">${Object.entries(PRIORITIES)
+        .map(([k, p]) => `<option value="${k}" data-color="${PRIORITY_COLORS[k]}"${sel(k === t.priority)}>${p.label}</option>`)
+        .join('')}</select></span>`;
   const category = field('category', categoriesFor(config, t).map((c) => `<option value="${escapeHtml(c)}"${sel(c === t.category)}>${escapeHtml(c)}</option>`).join(''));
   return { assignee, priority, category };
 }
