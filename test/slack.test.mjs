@@ -132,6 +132,15 @@ test('pulsanti: in attesa, risolvi, e l\'agente che risponde riapre', async () =
   assert.ok(calls.some((c) => c.channel === CH && /riaperto/.test(c.text ?? '')));
 });
 
+test('chi non e\' nel team non cambia stato; chi c\'e\' si', async () => {
+  const { press, store, t } = await setup();
+  store.addToTeam('UBO', 'Luca');
+  await press(ACTIONS.resolve, 1, 'UAG');
+  assert.equal(t().status, 'aperto');
+  await press(ACTIONS.resolve, 1, 'UBO');
+  assert.equal(t().status, 'risolto');
+});
+
 test('con BACKOFFICE_USERS, gli altri non cambiano stato', async () => {
   const { press, calls, t } = await setup({ backofficeUsers: ['UBO'] });
   await press(ACTIONS.resolve, 1, 'UAG');

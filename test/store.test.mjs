@@ -75,3 +75,16 @@ test('list filtra per aperti, richiedente e testo, urgenti prima', () => {
   assert.deepEqual(s.list({ q: '#3' }).map((t) => t.id), [3]);
   assert.deepEqual(s.counts(), { aperto: 2, in_lavorazione: 0, in_attesa: 0, risolto: 1 });
 });
+
+test('team: aggiunta, rinomina, rimozione', () => {
+  const s = new TicketStore(':memory:');
+  assert.deepEqual(s.team(), []);
+  s.addToTeam('UB', 'Bruno');
+  s.addToTeam('UA', 'anna');
+  s.addToTeam('UB', 'Bruno Neri');
+  assert.deepEqual(s.team().map((m) => m.name), ['anna', 'Bruno Neri']);
+  assert.ok(s.inTeam('UA'));
+  assert.ok(s.removeFromTeam('UA'));
+  assert.equal(s.removeFromTeam('UA'), false);
+  assert.ok(!s.inTeam('UA'));
+});

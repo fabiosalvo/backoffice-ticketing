@@ -28,8 +28,6 @@ const HELP = [
 ].join('\n');
 
 export function registerSlack(app, store, config, desk = createDesk(store, config)) {
-  const isBackoffice = (userId) => !config.backofficeUsers.length || config.backofficeUsers.includes(userId);
-
   // --- Apertura ----------------------------------------------------------------
 
   app.command('/ticket', async ({ command, ack, client, respond }) => {
@@ -60,7 +58,7 @@ export function registerSlack(app, store, config, desk = createDesk(store, confi
   app.action(/^ticket_/, async ({ action, ack, body, client }) => {
     await ack();
     const userId = body.user.id;
-    if (!isBackoffice(userId)) {
+    if (!desk.isBackoffice(userId)) {
       return client.chat.postEphemeral({
         channel: body.channel.id,
         user: userId,

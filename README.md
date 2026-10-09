@@ -85,8 +85,12 @@ utente qualsiasi, la password è quella).
   *Nota interna* (sfondo giallo) resta al backoffice. Si invia con **Invia come
   Aperto**, **Invia come In attesa** o **Invia come Risolto**: testo e stato
   partono insieme, e senza testo cambia solo lo stato.
-- **Rispondi come**: chi risponde, scelto fra le persone del workspace (solo
-  `BACKOFFICE_USERS`, se impostato). Il browser lo ricorda.
+- **Rispondi come**: chi risponde, scelto fra le persone del team. Il browser
+  lo ricorda.
+- **Team** (in alto): chi fa parte del backoffice. Si aggiunge scegliendo fra
+  le persone del workspace e si toglie con *Rimuovi*. Solo il team risponde
+  dalla dashboard e usa i pulsanti di stato su Slack; gli altri possono aprire
+  ticket ma non gestirli. Finché il team è vuoto, chiunque può farlo.
 
 Tutto quello che si fa dalla dashboard compare anche nel thread del ticket nel
 canale Slack, così il canale resta lo storico completo e si può lavorare
@@ -114,7 +118,7 @@ pubblico, un dominio o un certificato. Basta una macchina sempre accesa.
 npm install
 cp .env.example .env    # e compila i token e il canale
 npm start
-npm test                # 31 test, nessun workspace necessario
+npm test                # 35 test, nessun workspace necessario
 ```
 
 Serve Node 22.13 o successivo: il database è SQLite integrato in Node
@@ -163,7 +167,7 @@ e non si condivide fra più copie del servizio.
 | `SLACK_BOT_TOKEN` | — | Token bot `xoxb-` |
 | `SLACK_APP_TOKEN` | — | Token app `xapp-` per Socket Mode |
 | `BACKOFFICE_CHANNEL` | — | ID del canale dove arrivano i ticket |
-| `BACKOFFICE_USERS` | tutti | ID Slack di chi può usare i pulsanti di stato |
+| `BACKOFFICE_USERS` | — | ID Slack con cui riempire il team al primo avvio; poi il team si gestisce dalla dashboard |
 | `CATEGORIES` | 6 categorie | Voci del menu *Categoria*, separate da virgola |
 | `DASHBOARD_PASSWORD` | spenta | Accende la dashboard |
 | `DASHBOARD_PORT` | 3000 | Porta della dashboard |

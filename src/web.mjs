@@ -147,11 +147,15 @@ const page = (title, body) => `<!doctype html>
   .msg.interna .text { background:var(--note); border:1px solid var(--note-line); border-radius:6px; padding:10px 12px; }
   .tag { font-size:11px; padding:1px 6px; border-radius:4px; border:1px solid var(--line); color:var(--muted); margin-left:4px; }
   .event { padding:8px 0 8px 48px; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); }
+  .solo { max-width:760px; margin:0 auto; }
+  .member { display:flex; align-items:center; gap:12px; padding:10px 14px; border-bottom:1px solid var(--line); }
+  .member:last-child { border-bottom:0; } .member form { margin-left:auto; }
+  .add { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0; }
   .flash { padding:10px 12px; border-radius:6px; margin-bottom:12px; background:#e8f4ea; color:#1d5b2f; }
   .flash.err { background:#fbe9e7; color:#8a2316; }
   @media (max-width:760px) { .wrap { grid-template-columns:1fr; } aside { border-right:0; border-bottom:1px solid var(--line); } main { padding:16px; } }
 </style></head><body>
-<header class="top"><b>Ticket backoffice</b><a href="/">Tutti i ticket</a></header>
+<header class="top"><b>Ticket backoffice</b><a href="/">Ticket</a><a href="/team">Team</a></header>
 ${body}
 </body></html>`;
 
@@ -289,6 +293,45 @@ function ticketPage(store, t, config, { operators, operator, vista, flash }) {
   );
 }
 
+// --- Team ----------------------------------------------------------------------
+
+function teamPage(store, people, csrf, flash) {
+  const team = store.team();
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const members = team
+    .map((m) => {
+      const name = byId.get(m.user_id)?.name ?? m.name;
+      return `<div class="member">${avatar(name)}<div><b>${escapeHtml(name)}</b><div class="muted">nel team dal ${formatDate(m.added_at)}</div></div>
+        <form method="post" action="/team"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="user" value="${escapeHtml(m.user_id)}">
+        <button class="btn" name="action" value="remove">Rimuovi</button></form></div>`;
+    })
+    .join('');
+  const candidates = people.filter((p) => !store.inTeam(p.id));
+  const flashHtml = flash ? `<div class="flash${flash.error ? ' err' : ''}">${escapeHtml(flash.text)}</div>` : '';
+  return page(
+    'Team del backoffice',
+    `<main class="solo">${flashHtml}
+      <h1>Team del backoffice</h1>
+      <p class="muted">Le persone del team rispondono ai ticket dalla dashboard e ne cambiano lo stato, anche dai pulsanti su Slack.
+      Gli altri possono aprire ticket ma non gestirli.</p>
+      ${team.length ? '' : '<div class="flash err">Il team è vuoto: finché non aggiungi qualcuno, chiunque nel workspace può rispondere e cambiare stato.</div>'}
+      <form class="add" method="post" action="/team">
+        <input type="hidden" name="csrf" value="${csrf}">
+        <select name="user" required><option value="" selected disabled>Scegli una persona…</option>${candidates
+          .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
+          .join('')}</select>
+        <button class="btn primary" name="action" value="add">Aggiungi al team</button>
+      </form>
+      <div class="table">${members || '<div class="member muted">Nessuno nel team.</div>'}</div>
+    </main>`,
+  );
+}
+
+const TEAM_FLASHES = {
+  aggiunto: { text: 'Aggiunto al team.' },
+  rimosso: { text: 'Rimosso dal team.' },
+};
+
 const FLASHES = {
   inviato: { text: 'Risposta inviata: l\'agente la riceve su Slack.' },
   nota: { text: 'Nota interna salvata.' },
@@ -338,7 +381,27 @@ export function dashboardHandler(store, config, { desk, client } = {}) {
       return back(body ? (internal ? 'nota' : 'inviato') : 'stato');
     }
 
+    if (url.pathname === '/team' && req.method === 'POST') {
+      const form = await readForm(req);
+      if (!sameOrigin(req) || form.get('csrf') !== csrfToken(config.dashboardPassword)) return res.writeHead(403).end('Richiesta non valida');
+      if (!desk) return res.writeHead(503).end('Dashboard in sola lettura');
+      const user = form.get('user') ?? '';
+      if (form.get('action') === 'add') {
+        await desk.addToTeam(client, user);
+        return res.writeHead(303, { Location: '/team?ok=aggiunto' }).end();
+      }
+      if (form.get('action') === 'remove') {
+        desk.removeFromTeam(user);
+        return res.writeHead(303, { Location: '/team?ok=rimosso' }).end();
+      }
+      return res.writeHead(400).end('Azione sconosciuta');
+    }
+
     if (req.method !== 'GET') return res.writeHead(405).end();
+    if (url.pathname === '/team') {
+      const people = desk ? await desk.people(client).catch(() => []) : [];
+      return send(200, teamPage(store, people, csrfToken(config.dashboardPassword), TEAM_FLASHES[url.searchParams.get('ok')]));
+    }
     if (url.pathname === '/') return send(200, listPage(store, url.searchParams));
     const m = url.pathname.match(/^\/t\/(\d+)$/);
     const t = m && store.get(Number(m[1]));

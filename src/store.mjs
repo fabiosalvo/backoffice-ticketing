@@ -74,6 +74,13 @@ CREATE TABLE IF NOT EXISTS comments (
   created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS comments_ticket ON comments(ticket_id);
+
+-- Le persone del backoffice: rispondono dalla dashboard e cambiano stato.
+CREATE TABLE IF NOT EXISTS team (
+  user_id   TEXT PRIMARY KEY,           -- ID utente Slack
+  name      TEXT NOT NULL,
+  added_at  TEXT NOT NULL
+);
 `;
 
 export class TicketStore {
@@ -201,6 +208,27 @@ export class TicketStore {
   counts() {
     const rows = this.db.prepare('SELECT status, COUNT(*) AS n FROM tickets GROUP BY status').all();
     return Object.fromEntries(Object.keys(STATUSES).map((s) => [s, rows.find((r) => r.status === s)?.n ?? 0]));
+  }
+
+  // --- Team del backoffice ----------------------------------------------------
+
+  team() {
+    return this.db.prepare('SELECT * FROM team ORDER BY name COLLATE NOCASE').all();
+  }
+
+  inTeam(userId) {
+    return Boolean(this.db.prepare('SELECT 1 FROM team WHERE user_id = ?').get(userId));
+  }
+
+  /** Aggiunge (o rinomina) una persona del team. */
+  addToTeam(userId, name) {
+    this.db
+      .prepare('INSERT INTO team (user_id, name, added_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET name = excluded.name')
+      .run(userId, name, this.now());
+  }
+
+  removeFromTeam(userId) {
+    return this.db.prepare('DELETE FROM team WHERE user_id = ?').run(userId).changes > 0;
   }
 
   #system(id, body) {
