@@ -13,9 +13,8 @@ import {
   newTicketModal,
   readNewTicket,
   relayText,
-  statusNotice,
-  ticketCard,
 } from './blocks.mjs';
+import { createDesk } from './desk.mjs';
 
 // Scorciatoia globale: compare scrivendo "/" in qualsiasi campo messaggio
 // (e nel menu ⚡) e apre direttamente il modulo, senza digitare comandi.
@@ -28,33 +27,8 @@ const HELP = [
   '• Le risposte arrivano qui in DM, nel thread del ticket: rispondi li\'.',
 ].join('\n');
 
-export function registerSlack(app, store, config) {
-  const users = new Map();
-
-  async function who(client, userId) {
-    if (!users.has(userId)) {
-      const { user } = await client.users.info({ user: userId });
-      users.set(userId, {
-        id: userId,
-        name: user.profile?.display_name || user.profile?.real_name || user.name,
-        icon: user.profile?.image_48,
-      });
-    }
-    return users.get(userId);
-  }
-
+export function registerSlack(app, store, config, desk = createDesk(store, config)) {
   const isBackoffice = (userId) => !config.backofficeUsers.length || config.backofficeUsers.includes(userId);
-
-  async function refreshCards(client, t) {
-    const updates = [];
-    if (t.channel_ts) updates.push(client.chat.update({ channel: config.backofficeChannel, ts: t.channel_ts, ...ticketCard(t, { audience: 'backoffice' }) }));
-    if (t.dm_ts) updates.push(client.chat.update({ channel: t.dm_channel, ts: t.dm_ts, ...ticketCard(t, { audience: 'agente' }) }));
-    await Promise.all(updates);
-  }
-
-  const postInDm = (client, t, msg) => client.chat.postMessage({ channel: t.dm_channel, thread_ts: t.dm_ts, ...msg });
-  const postInChannel = (client, t, msg) =>
-    client.chat.postMessage({ channel: config.backofficeChannel, thread_ts: t.channel_ts, ...msg });
 
   // --- Apertura ----------------------------------------------------------------
 
@@ -78,20 +52,7 @@ export function registerSlack(app, store, config) {
     const input = readNewTicket(view);
     if (!input.title.trim()) return ack({ response_action: 'errors', errors: { title: "Scrivi l'oggetto della richiesta" } });
     await ack();
-
-    const requester = await who(client, body.user.id);
-    let t = store.create({ ...input, requesterId: requester.id, requesterName: requester.name });
-
-    const posted = await client.chat.postMessage({ channel: config.backofficeChannel, ...ticketCard(t, { audience: 'backoffice' }) });
-    t = store.setSlackRefs(t.id, { channelTs: posted.ts });
-    try {
-      const { channel } = await client.conversations.open({ users: requester.id });
-      const dm = await client.chat.postMessage({ channel: channel.id, ...ticketCard(t, { audience: 'agente' }) });
-      t = store.setSlackRefs(t.id, { dmChannel: channel.id, dmTs: dm.ts });
-    } catch (err) {
-      // Il ticket esiste comunque ed e' nel canale: il backoffice lo vede.
-      logger.error(`Ticket #${t.id}: DM all'agente non riuscito`, err);
-    }
+    await desk.openTicket(client, logger, await desk.who(client, body.user.id), input);
   });
 
   // --- Pulsanti di stato ---------------------------------------------------------
@@ -106,29 +67,21 @@ export function registerSlack(app, store, config) {
         text: 'Solo il backoffice puo\' cambiare lo stato dei ticket.',
       });
     }
-    const actor = await who(client, userId);
+    const actor = await desk.who(client, userId);
     const id = Number(action.value);
-    let t = store.get(id);
+    const t = store.get(id);
     if (!t) return;
-    let reopened = false;
 
     if (action.action_id === ACTIONS.take) {
       store.assign(id, actor);
-      t = store.setStatus(id, 'in_lavorazione', actor) ?? store.get(id);
+      await desk.changeStatus(client, id, 'in_lavorazione', actor);
     } else if (action.action_id === ACTIONS.wait) {
-      if (!t.assignee_id) store.assign(id, actor);
-      t = store.setStatus(id, 'in_attesa', actor) ?? store.get(id);
+      await desk.changeStatus(client, id, 'in_attesa', actor);
     } else if (action.action_id === ACTIONS.resolve) {
-      if (!t.assignee_id) store.assign(id, actor);
-      t = store.setStatus(id, 'risolto', actor) ?? store.get(id);
+      await desk.changeStatus(client, id, 'risolto', actor);
     } else if (action.action_id === ACTIONS.reopen) {
-      reopened = true;
-      t = store.setStatus(id, t.assignee_id ? 'in_lavorazione' : 'aperto', actor) ?? store.get(id);
+      await desk.changeStatus(client, id, t.assignee_id ? 'in_lavorazione' : 'aperto', actor, { reopened: true });
     }
-
-    await refreshCards(client, t);
-    const notice = { text: statusNotice(t, userId, { reopened }) };
-    await Promise.all([postInChannel(client, t, notice), t.dm_ts && postInDm(client, t, notice)]);
   });
 
   // --- Conversazione nei thread -------------------------------------------------
@@ -144,12 +97,9 @@ export function registerSlack(app, store, config) {
       if (!inThread) return;
       const t = store.byChannelThread(event.thread_ts);
       if (!t) return;
-      const author = await who(client, event.user);
       const internal = INTERNAL_PREFIX.test(event.text ?? '');
       const body = relayText((event.text ?? '').replace(INTERNAL_PREFIX, ''), event.files);
-      const { ticket, statusChanged } = store.reply(t.id, { side: 'backoffice', authorId: author.id, authorName: author.name, body, internal });
-      if (!internal && ticket.dm_ts) await postInDm(client, ticket, { text: body, username: `${author.name} · Backoffice`, icon_url: author.icon });
-      if (statusChanged || ticket.assignee_id !== t.assignee_id) await refreshCards(client, ticket);
+      await desk.backofficeReply(client, t.id, await desk.who(client, event.user), { body, internal, fromSlack: true });
       return;
     }
 
@@ -160,14 +110,7 @@ export function registerSlack(app, store, config) {
       }
       const t = store.byDmThread(event.channel, event.thread_ts);
       if (!t) return;
-      const author = await who(client, event.user);
-      const body = relayText(event.text ?? '', event.files);
-      const { ticket, statusChanged } = store.reply(t.id, { side: 'agente', authorId: author.id, authorName: author.name, body });
-      await postInChannel(client, ticket, { text: body, username: author.name, icon_url: author.icon });
-      if (statusChanged) {
-        await refreshCards(client, ticket);
-        if (t.status === 'risolto') await postInChannel(client, ticket, { text: statusNotice(ticket, author.id, { reopened: true }) });
-      }
+      await desk.agentReply(client, t.id, await desk.who(client, event.user), { text: event.text, files: event.files });
       return;
     }
 

@@ -4,11 +4,14 @@ import { DatabaseSync } from 'node:sqlite';
 
 // --- Vocabolario ---------------------------------------------------------------
 
+// Le etichette sono quelle di Zendesk, che il backoffice conosce gia':
+// Nuovo (nessuno l'ha ancora preso), Aperto (ci si lavora), In attesa (tocca
+// all'agente), Risolto.
 export const STATUSES = {
-  aperto: { label: 'Aperto', emoji: '🟡' },
-  in_lavorazione: { label: 'In lavorazione', emoji: '🔵' },
-  in_attesa: { label: "In attesa dell'agente", emoji: '🟠' },
-  risolto: { label: 'Risolto', emoji: '🟢' },
+  aperto: { label: 'Nuovo', emoji: '🟡' },
+  in_lavorazione: { label: 'Aperto', emoji: '🔴' },
+  in_attesa: { label: 'In attesa', emoji: '🔵' },
+  risolto: { label: 'Risolto', emoji: '⚪' },
 };
 
 export const PRIORITIES = {
