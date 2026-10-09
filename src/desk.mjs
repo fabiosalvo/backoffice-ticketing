@@ -79,12 +79,23 @@ export function createDesk(store, config) {
    * canale; dalla dashboard va pubblicato anche li', cosi' il canale resta lo
    * storico completo. Le note interne non arrivano mai all'agente.
    * `status`, se presente, e' lo stato con cui chiudere l'invio (come
-   * "Invia come …" di Zendesk); il testo puo' anche mancare.
+   * "Invia come …" di Zendesk); `props` le proprieta' modificate nel pannello
+   * (priorita', categoria, assegnatario). Il testo puo' anche mancare.
    */
-  async function backofficeReply(client, id, actor, { body = '', internal = false, status, fromSlack = false }) {
+  async function backofficeReply(client, id, actor, { body = '', internal = false, status, props, fromSlack = false }) {
     let t = store.get(id);
     if (!t) throw new Error(`Ticket #${id} inesistente`);
     const before = t;
+    // Le proprieta' prima del testo: se si assegna a un collega, la risposta
+    // non deve riassegnare il ticket a chi scrive.
+    const changes = props ? store.updateProps(id, props, actor) : [];
+    if (changes.length) {
+      t = store.get(id);
+      if (t.channel_ts) {
+        const text = changes.map((c) => (c.field === 'assignee' && c.assigneeId ? `assegnato a <@${c.assigneeId}>` : c.text)).join(' · ');
+        await postInChannel(client, t, { text: `✏️ ${actor.name}: ${text}` });
+      }
+    }
     if (body.trim()) {
       ({ ticket: t } = store.reply(id, { side: 'backoffice', authorId: actor.id, authorName: actor.name, body, internal }));
       if (!fromSlack && t.channel_ts) {
@@ -94,7 +105,7 @@ export function createDesk(store, config) {
       if (!internal && t.dm_ts) await postInDm(client, t, { text: body, username: `${actor.name} · Backoffice`, icon_url: actor.icon });
     }
     if (status && status !== t.status) return changeStatus(client, id, status, actor);
-    if (t.status !== before.status || t.assignee_id !== before.assignee_id) await refreshCards(client, t);
+    if (changes.length || t.status !== before.status || t.assignee_id !== before.assignee_id) await refreshCards(client, t);
     return t;
   }
 

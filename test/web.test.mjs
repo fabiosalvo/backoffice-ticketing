@@ -54,7 +54,7 @@ function fakeClient() {
   };
 }
 
-const config = { dashboardPassword: PASSWORD, backofficeChannel: CH, backofficeUsers: [], workspaceUrl: 'https://gromia.slack.com' };
+const config = { dashboardPassword: PASSWORD, backofficeChannel: CH, backofficeUsers: [], workspaceUrl: 'https://gromia.slack.com', categories: ['Altro', 'Pubblicazione annunci'] };
 
 function setup() {
   const store = new TicketStore(':memory:');
@@ -149,6 +149,52 @@ test('invio vuoto, operatore sconosciuto, CSRF e origine estranea vengono respin
   assert.equal((await reply(h, { body: 'ciao' }, { headers: { origin: 'https://evil.example' } })).status, 403);
   assert.equal(store.comments(1).length, 0);
   assert.equal(client.calls.length, 0);
+});
+
+test('pannello: assegnatario, priorita\' e categoria si modificano con "Aggiorna"', async () => {
+  const { h, store, client } = setup();
+  const detail = (await call(h, '/t/1')).body;
+  assert.match(detail, /<select name="assignee" form="reply-form"/);
+  assert.match(detail, /<select name="priority" form="reply-form"/);
+  assert.match(detail, /<option value="Pubblicazione annunci">/);
+
+  const res = await reply(h, { body: '', status: '', assignee: 'UFS', priority: 'alta', category: 'Pubblicazione annunci' });
+  assert.equal(res.headers.location, '/t/1?ok=salvato');
+  const t = store.get(1);
+  assert.equal(t.assignee_id, 'UFS');
+  assert.equal(t.assignee_name, 'Fabio Salvo');
+  assert.equal(t.priority, 'alta');
+  assert.equal(t.category, 'Pubblicazione annunci');
+  assert.equal(t.status, 'aperto');
+  const history = store.comments(1).map((c) => c.body).join('\n');
+  assert.match(history, /Luca Rossi: priorita' da Normale a Alta/);
+  assert.match(history, /Luca Rossi: categoria da "Altro" a "Pubblicazione annunci"/);
+  assert.match(history, /Luca Rossi: assegnato a Fabio Salvo/);
+  // nel canale una riga con la menzione, cosi' Slack avvisa il nuovo assegnatario; all'agente niente
+  assert.ok(client.calls.some((c) => c.m === 'post' && c.channel === CH && /assegnato a <@UFS>/.test(c.text)));
+  assert.ok(!client.calls.some((c) => c.m === 'post' && c.channel === DM));
+  assert.ok(client.calls.some((c) => c.m === 'update'));
+
+  // nessuna modifica: niente da salvare
+  const same = await reply(h, { body: '', status: '', assignee: 'UFS', priority: 'alta', category: 'Pubblicazione annunci' });
+  assert.equal(same.headers.location, '/t/1?ok=vuoto');
+});
+
+test('pannello: rispondere assegnando a un collega lascia il collega', async () => {
+  const { h, store } = setup();
+  await reply(h, { body: 'Se ne occupa Fabio', status: 'in_lavorazione', assignee: 'UFS' });
+  assert.equal(store.get(1).assignee_id, 'UFS');
+  assert.equal(store.get(1).status, 'in_lavorazione');
+});
+
+test('pannello: valori non validi vengono ignorati, "Nessuno" toglie l\'assegnatario', async () => {
+  const { h, store } = setup();
+  await reply(h, { body: '', status: '', assignee: 'UFS' });
+  assert.equal((await reply(h, { body: '', status: '', assignee: 'USCONOSCIUTO', priority: 'altissima', category: 'Inventata' })).headers.location, '/t/1?ok=vuoto');
+  assert.equal(store.get(1).assignee_id, 'UFS');
+  assert.equal(store.get(1).priority, 'normale');
+  await reply(h, { body: '', status: '', assignee: '' });
+  assert.equal(store.get(1).assignee_id, null);
 });
 
 const team = (h, form, extra = {}) =>

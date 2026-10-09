@@ -142,6 +142,39 @@ export class TicketStore {
     return this.get(id);
   }
 
+  /**
+   * Modifica le proprieta' dal pannello del ticket: priorita', categoria,
+   * assegnatario (`assignee: null` toglie l'assegnazione). Ogni modifica resta
+   * nello storico. Restituisce l'elenco delle modifiche, vuoto se non cambia nulla.
+   */
+  updateProps(id, { priority, category, assignee }, actor) {
+    const t = this.get(id);
+    if (!t) throw new Error(`Ticket #${id} inesistente`);
+    const changes = [];
+    if (priority !== undefined && priority !== t.priority) {
+      if (!PRIORITIES[priority]) throw new Error(`Priorita' sconosciuta: ${priority}`);
+      this.db.prepare('UPDATE tickets SET priority = ? WHERE id = ?').run(priority, id);
+      changes.push({ field: 'priority', text: `priorita' da ${PRIORITIES[t.priority].label} a ${PRIORITIES[priority].label}` });
+    }
+    if (category !== undefined && category !== t.category) {
+      this.db.prepare('UPDATE tickets SET category = ? WHERE id = ?').run(category, id);
+      changes.push({ field: 'category', text: `categoria da "${t.category}" a "${category}"` });
+    }
+    if (assignee !== undefined && (assignee?.id ?? null) !== t.assignee_id) {
+      this.db.prepare('UPDATE tickets SET assignee_id = ?, assignee_name = ? WHERE id = ?').run(assignee?.id ?? null, assignee?.name ?? null, id);
+      changes.push({
+        field: 'assignee',
+        text: assignee ? `assegnato a ${assignee.name}` : 'tolto l\'assegnatario',
+        assigneeId: assignee?.id,
+      });
+    }
+    if (changes.length) {
+      this.db.prepare('UPDATE tickets SET updated_at = ? WHERE id = ?').run(this.now(), id);
+      for (const c of changes) this.#system(id, `${actor.name}: ${c.text}`);
+    }
+    return changes;
+  }
+
   assign(id, actor) {
     const ticket = this.get(id);
     if (!ticket) throw new Error(`Ticket #${id} inesistente`);
