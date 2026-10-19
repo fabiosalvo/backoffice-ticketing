@@ -88,3 +88,12 @@ test('team: aggiunta, rinomina, rimozione', () => {
   assert.equal(s.removeFromTeam('UA'), false);
   assert.ok(!s.inTeam('UA'));
 });
+
+test('rinominare una categoria aggiorna i ticket esistenti', () => {
+  const s = new TicketStore(':memory:');
+  s.create({ title: 'Provvigione marzo', category: 'Amministrazione e provvigioni', ...agente });
+  s.create({ title: 'Visura', category: 'Documenti e visure', ...agente });
+  assert.equal(s.renameCategory('Amministrazione e provvigioni', 'Fatturazione'), 1);
+  assert.deepEqual(s.list().map((t) => t.category).sort(), ['Documenti e visure', 'Fatturazione']);
+  assert.equal(s.renameCategory('Amministrazione e provvigioni', 'Fatturazione'), 0);
+});
