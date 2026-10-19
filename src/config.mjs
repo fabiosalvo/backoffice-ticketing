@@ -36,7 +36,7 @@ export const config = {
     'Contratti e mandati',
     'Pubblicazione annunci',
     'Documenti e visure',
-    'Amministrazione e provvigioni',
+    'Fatturazione',
     'IT e accessi',
     'Altro',
   ]),

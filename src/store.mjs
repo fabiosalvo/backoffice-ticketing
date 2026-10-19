@@ -142,6 +142,11 @@ export class TicketStore {
     return this.get(id);
   }
 
+  /** Rinomina una categoria su tutti i ticket che la usano. */
+  renameCategory(from, to) {
+    return Number(this.db.prepare('UPDATE tickets SET category = ? WHERE category = ?').run(to, from).changes);
+  }
+
   /**
    * Modifica le proprieta' dal pannello del ticket: priorita', categoria,
    * assegnatario (`assignee: null` toglie l'assegnazione). Ogni modifica resta

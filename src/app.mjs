@@ -13,6 +13,8 @@ try {
 }
 
 const store = new TicketStore(config.dbPath);
+// Categorie rinominate: i ticket gia' aperti passano al nome nuovo.
+store.renameCategory('Amministrazione e provvigioni', 'Fatturazione');
 const app = new bolt.App({ token: config.botToken, appToken: config.appToken, socketMode: true });
 const desk = createDesk(store, config);
 registerSlack(app, store, config, desk);
